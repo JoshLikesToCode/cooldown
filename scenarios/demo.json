@@ -1,0 +1,7 @@
+[
+  { "appId": 730, "name": "Counter-Strike 2", "minutes": 50 },
+  { "appId": 0, "minutes": 5 },
+  { "appId": 730, "name": "Counter-Strike 2", "minutes": 30 },
+  { "appId": 730, "name": "Counter-Strike 2", "minutes": 10 },
+  { "appId": 1145360, "name": "Hades", "minutes": 120 }
+]

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Targets plain net10.0 so it builds on Linux. Windows-only APIs are guarded with [SupportedOSPlatform]. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Cooldown.Core\Cooldown.Core.csproj" />
+    <ProjectReference Include="..\Cooldown.Steam\Cooldown.Steam.csproj" />
+  </ItemGroup>
+</Project>

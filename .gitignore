@@ -1,0 +1,29 @@
+bin/
+obj/
+artifacts/
+out/
+.vs/
+.idea/
+.vscode/
+*.user
+*.DotSettings.user
+
+# Secrets / credentials - never commit these
+*.env
+.env.*
+*secret*
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+*.ppk
+appsettings.*.json
+!appsettings.json
+config.local.json
+
+# Local app data if ever copied into the repo for debugging
+**/Cooldown/config.json
+**/Cooldown/installed-games.txt
+**/Cooldown/logs/

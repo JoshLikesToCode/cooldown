@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cooldown.App/Cooldown.App.csproj" />
+    <Project Path="src/Cooldown.Core/Cooldown.Core.csproj" />
+    <Project Path="src/Cooldown.Data/Cooldown.Data.csproj" />
+    <Project Path="src/Cooldown.Platform.Fake/Cooldown.Platform.Fake.csproj" />
+    <Project Path="src/Cooldown.Platform.Windows/Cooldown.Platform.Windows.csproj" />
+    <Project Path="src/Cooldown.Steam/Cooldown.Steam.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cooldown.Core.Tests/Cooldown.Core.Tests.csproj" />
+  </Folder>
+</Solution>

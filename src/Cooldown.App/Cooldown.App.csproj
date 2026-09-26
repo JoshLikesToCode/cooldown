@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Cooldown</AssemblyName>
+    <RootNamespace>Cooldown.App</RootNamespace>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.*" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.*" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cooldown.Core\Cooldown.Core.csproj" />
+    <ProjectReference Include="..\Cooldown.Data\Cooldown.Data.csproj" />
+    <ProjectReference Include="..\Cooldown.Steam\Cooldown.Steam.csproj" />
+    <ProjectReference Include="..\Cooldown.Platform.Windows\Cooldown.Platform.Windows.csproj" />
+    <ProjectReference Include="..\Cooldown.Platform.Fake\Cooldown.Platform.Fake.csproj" />
+  </ItemGroup>
+</Project>
