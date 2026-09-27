@@ -15,9 +15,11 @@ Start-Service sshd
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 # 3. A task that starts Cooldown in your desktop session when deploy.sh asks it to.
-$user = "$env:USERDOMAIN\$env:USERNAME"
+# Resolved as a SID, not "domain\username": Register-ScheduledTask fails for Entra ID / Azure AD
+# accounts with "No mapping between account names and security IDs was done" otherwise.
+$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
 $action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir "Cooldown.exe")
-$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName "CooldownDev" -Action $action -Principal $principal -Force | Out-Null
 
 Write-Host "Ready. SSH is running and the CooldownDev task points at $InstallDir\Cooldown.exe."

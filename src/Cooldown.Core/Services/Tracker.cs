@@ -19,9 +19,13 @@ public sealed class Tracker(
     private sealed record Current(long SessionId, int AppId, DateTimeOffset Start, DateTimeOffset LastSeen);
 
     private Current? _current;
-    private string? _periodKey;
-    private readonly HashSet<int> _warned = [];
+
+    // Per-bucket state, since a game can now count toward more than one bucket at once and each
+    // bucket has its own reset period and warning thresholds.
+    private readonly Dictionary<string, string> _periodKeyByBucket = [];
+    private readonly Dictionary<string, HashSet<int>> _warnedByBucket = [];
     private DateTimeOffset? _closeAt;
+    private string? _closingBucketId;
 
     public DetectedGame? RunningGame { get; private set; }
 
@@ -57,9 +61,14 @@ public sealed class Tracker(
         RecordPlaytime(game, now);
 
         if (game is null)
+        {
             _closeAt = null;
+            _closingBucketId = null;
+        }
         else
+        {
             await EnforceAsync(game, now, ct);
+        }
 
         Ticked?.Invoke();
     }
@@ -91,43 +100,49 @@ public sealed class Tracker(
 
     private async Task EnforceAsync(DetectedGame game, DateTimeOffset now, CancellationToken ct)
     {
-        var bucket = budgets.BucketFor(game.AppId);
-        if (bucket is null)
-            return;
+        // Goal buckets track progress passively (via BudgetService.Used, from recorded sessions)
+        // but are never enforced: no warnings, no closing.
+        var buckets = budgets.BucketsFor(game.AppId).Where(b => !b.IsGoal).ToList();
 
-        // Reset warning state when the bucket or period changes.
-        var key = $"{bucket.Id}@{budgets.PeriodStart(bucket, now):O}";
-        if (key != _periodKey)
+        Bucket? exhaustedBlock = null;
+        foreach (var bucket in buckets)
         {
-            _periodKey = key;
-            _warned.Clear();
+            var warned = WarnedSetFor(bucket, now);
+            var status = budgets.Status(bucket, now);
+
+            if (!status.IsExhausted)
+            {
+                WarnIfLow(bucket, status.Remaining, warned);
+                continue;
+            }
+
+            if (bucket.Enforcement == Enforcement.Remind)
+            {
+                if (warned.Add(0))
+                    notifier.Notify("Budget used up",
+                        $"{bucket.Name} is out of time {Periods.Noun(bucket.Period)}.", NotificationLevel.Alert);
+                continue;
+            }
+
+            // If several Block buckets are exhausted at once, the first one found drives the close countdown.
+            exhaustedBlock ??= bucket;
+        }
+
+        if (exhaustedBlock is null)
+        {
             _closeAt = null;
-        }
-
-        var status = budgets.Status(bucket, now);
-
-        if (!status.IsExhausted)
-        {
-            _closeAt = null;
-            WarnIfLow(bucket, status.Remaining);
+            _closingBucketId = null;
             return;
         }
 
-        if (bucket.Enforcement == Enforcement.Remind)
-        {
-            if (_warned.Add(0))
-                notifier.Notify("Budget used up",
-                    $"{bucket.Name} is out of time {Periods.Noun(bucket.Period)}.", NotificationLevel.Alert);
-            return;
-        }
-
-        if (_closeAt is null)
+        if (_closeAt is null || _closingBucketId != exhaustedBlock.Id)
         {
             bool justLaunched = _current?.Start == now;
             int grace = justLaunched ? config.LaunchGraceSeconds : config.GraceSeconds;
             _closeAt = now + TimeSpan.FromSeconds(grace * clock.Speed);
+            _closingBucketId = exhaustedBlock.Id;
             notifier.Notify("Time's up",
-                $"{bucket.Name} is out of time {Periods.Noun(bucket.Period)}. " +
+                $"{exhaustedBlock.Name} is out of time {Periods.Noun(exhaustedBlock.Period)}. " +
                 $"{game.DisplayName} will close in {grace} seconds. Save now.",
                 NotificationLevel.Alert);
             return;
@@ -137,24 +152,37 @@ public sealed class Tracker(
         {
             Log.Info($"Closing {game.DisplayName} ({game.AppId})");
             _closeAt = null;
+            _closingBucketId = null;
             bool closed = await terminator.TerminateAsync(game.AppId, TimeSpan.FromSeconds(10), ct);
             if (!closed)
                 notifier.Notify("Couldn't close game",
-                    $"{game.DisplayName} is still running. {bucket.Name} is out of time.",
+                    $"{game.DisplayName} is still running. {exhaustedBlock.Name} is out of time.",
                     NotificationLevel.Alert);
         }
     }
 
-    private void WarnIfLow(Bucket bucket, TimeSpan remaining)
+    /// <summary>The set of warning thresholds already fired for this bucket's current period, reset on rollover.</summary>
+    private HashSet<int> WarnedSetFor(Bucket bucket, DateTimeOffset now)
+    {
+        var key = $"{bucket.Id}@{budgets.PeriodStart(bucket, now):O}";
+        if (_periodKeyByBucket.GetValueOrDefault(bucket.Id) != key)
+        {
+            _periodKeyByBucket[bucket.Id] = key;
+            _warnedByBucket[bucket.Id] = [];
+        }
+        return _warnedByBucket[bucket.Id];
+    }
+
+    private void WarnIfLow(Bucket bucket, TimeSpan remaining, HashSet<int> warned)
     {
         // Mark every threshold we've passed so a late start doesn't fire three warnings in a row.
         var crossed = config.WarningMinutes
-            .Where(m => m > 0 && remaining <= TimeSpan.FromMinutes(m) && !_warned.Contains(m))
+            .Where(m => m > 0 && remaining <= TimeSpan.FromMinutes(m) && !warned.Contains(m))
             .ToList();
         if (crossed.Count == 0)
             return;
 
-        _warned.UnionWith(crossed);
+        warned.UnionWith(crossed);
         notifier.Notify("Time check",
             $"{Format.Duration(remaining)} left in {bucket.Name} {Periods.Noun(bucket.Period)}.",
             NotificationLevel.Warning);

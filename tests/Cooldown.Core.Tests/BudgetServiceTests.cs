@@ -10,7 +10,7 @@ public class BudgetServiceTests
     private static (BudgetService, InMemorySessionStore, Bucket) Setup()
     {
         var bucket = new Bucket("comp", "Competitive", TimeSpan.FromHours(1), ResetPeriod.Daily, Enforcement.Block);
-        var config = new CooldownConfig { Buckets = [bucket], Assignments = { [730] = "comp", [570] = "comp" } };
+        var config = new CooldownConfig { Buckets = [bucket], Assignments = { [730] = ["comp"], [570] = ["comp"] } };
         var store = new InMemorySessionStore();
         return (new BudgetService(config, store), store, bucket);
     }
@@ -53,5 +53,24 @@ public class BudgetServiceTests
         var status = budgets.Status(bucket, Noon);
         Assert.Equal(TimeSpan.Zero, status.Remaining);
         Assert.True(status.IsExhausted);
+    }
+
+    [Fact]
+    public void A_game_in_two_buckets_counts_independently_toward_each()
+    {
+        var learning = new Bucket("learning", "Learning", TimeSpan.FromHours(2), ResetPeriod.Monthly, Enforcement.Remind, IsGoal: true);
+        var strategy = new Bucket("strategy", "Strategy", TimeSpan.FromHours(5), ResetPeriod.Weekly, Enforcement.Block);
+        var config = new CooldownConfig
+        {
+            Buckets = [learning, strategy],
+            Assignments = { [400] = ["learning", "strategy"] },
+        };
+        var store = new InMemorySessionStore();
+        var budgets = new BudgetService(config, store);
+        store.Extend(store.Begin(400, Noon.AddHours(-1)).Id, Noon);
+
+        Assert.Equal(TimeSpan.FromHours(1), budgets.Used(learning, Noon));
+        Assert.Equal(TimeSpan.FromHours(1), budgets.Used(strategy, Noon));
+        Assert.Equal([learning, strategy], budgets.BucketsFor(400));
     }
 }

@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Cooldown.Core.Models;
 using Cooldown.Core.Services;
 
@@ -24,6 +25,10 @@ public sealed class MainWindow : Window
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         Background = Palette.Background;
+        Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://Cooldown/Assets/app-icon.png")));
+
+        var settingsButton = new Button { Content = "Settings", HorizontalAlignment = HorizontalAlignment.Left };
+        settingsButton.Click += (_, _) => new SettingsWindow(_host, Refresh).Show();
 
         Content = new StackPanel
         {
@@ -33,6 +38,7 @@ public sealed class MainWindow : Window
             {
                 _nowPlaying,
                 _buckets,
+                settingsButton,
                 new TextBlock
                 {
                     Text = $"{host.Status}\nSettings: {host.ConfigPath}",
@@ -50,14 +56,14 @@ public sealed class MainWindow : Window
     {
         var now = _host.Clock.Now;
         var game = _host.Tracker.RunningGame;
-        var bucket = game is null ? null : _host.Budgets.BucketFor(game.AppId);
+        var buckets = game is null ? [] : _host.Budgets.BucketsFor(game.AppId);
 
         if (game is null)
             _nowPlaying.Text = "Nothing running";
-        else if (bucket is null)
+        else if (buckets.Count == 0)
             _nowPlaying.Text = $"Playing {game.DisplayName}. Not in a bucket, so no limit.";
         else
-            _nowPlaying.Text = $"Playing {game.DisplayName} in {bucket.Name}";
+            _nowPlaying.Text = $"Playing {game.DisplayName} in {string.Join(", ", buckets.Select(b => b.Name))}";
 
         _buckets.Children.Clear();
         foreach (var status in _host.Budgets.Snapshot(now))
@@ -66,27 +72,44 @@ public sealed class MainWindow : Window
 
     private static Control BucketRow(BucketStatus s)
     {
-        double fraction = s.Bucket.Budget > TimeSpan.Zero ? s.Remaining / s.Bucket.Budget : 0;
-        var color = s.IsExhausted ? Palette.Empty : fraction <= 0.2 ? Palette.Low : Palette.Plenty;
-        var rule = s.Bucket.Enforcement == Enforcement.Block ? "closes games" : "reminds only";
+        var name = string.IsNullOrEmpty(s.Bucket.Icon) ? s.Bucket.Name : $"{s.Bucket.Icon} {s.Bucket.Name}";
+
+        double fraction;
+        IBrush color;
+        string valueText;
+        string subtitle;
+
+        if (s.Bucket.IsGoal)
+        {
+            fraction = s.Bucket.Budget > TimeSpan.Zero ? Math.Min(1.0, s.Used / s.Bucket.Budget) : 0;
+            color = s.Bucket.Color is { } goalHex ? Brush.Parse(goalHex) : Palette.Plenty;
+            valueText = fraction >= 1
+                ? $"{Format.Duration(s.Used)} — goal met!"
+                : $"{Format.Duration(s.Used)} / {Format.Duration(s.Bucket.Budget)}";
+            subtitle = $"Goal {Periods.Noun(s.Bucket.Period)}";
+        }
+        else
+        {
+            fraction = s.Bucket.Budget > TimeSpan.Zero ? s.Remaining / s.Bucket.Budget : 0;
+            var defaultColor = s.IsExhausted ? Palette.Empty : fraction <= 0.2 ? Palette.Low : Palette.Plenty;
+            color = s.Bucket.Color is { } hex ? Brush.Parse(hex) : defaultColor;
+            var rule = s.Bucket.Enforcement == Enforcement.Block ? "closes games" : "reminds only";
+            valueText = s.IsExhausted ? "Out of time" : $"{Format.Duration(s.Remaining)} left";
+            subtitle = $"{Format.Duration(s.Bucket.Budget)} {Periods.Noun(s.Bucket.Period)}, {rule}";
+        }
 
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(new StackPanel
         {
             Children =
             {
-                new TextBlock { Text = s.Bucket.Name, FontSize = 16, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text },
-                new TextBlock
-                {
-                    Text = $"{Format.Duration(s.Bucket.Budget)} {Periods.Noun(s.Bucket.Period)}, {rule}",
-                    FontSize = 12,
-                    Foreground = Palette.Muted,
-                },
+                new TextBlock { Text = name, FontSize = 16, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text },
+                new TextBlock { Text = subtitle, FontSize = 12, Foreground = Palette.Muted },
             },
         });
         var remaining = new TextBlock
         {
-            Text = s.IsExhausted ? "Out of time" : $"{Format.Duration(s.Remaining)} left",
+            Text = valueText,
             FontSize = 20,
             FontWeight = FontWeight.Bold,
             Foreground = color,

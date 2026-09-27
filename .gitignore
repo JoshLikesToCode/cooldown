@@ -27,3 +27,6 @@ config.local.json
 **/Cooldown/config.json
 **/Cooldown/installed-games.txt
 **/Cooldown/logs/
+
+# AI scratch files, session handoffs, local notes - never published
+.local/

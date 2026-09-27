@@ -5,10 +5,11 @@ namespace Cooldown.Core.Services;
 
 public sealed class BudgetService(CooldownConfig config, ISessionStore store)
 {
-    public Bucket? BucketFor(int appId) =>
-        config.Assignments.TryGetValue(appId, out var bucketId)
-            ? config.Buckets.FirstOrDefault(b => b.Id == bucketId)
-            : null;
+    /// <summary>All buckets a game counts toward. Usually zero or one, but a game can be in several.</summary>
+    public IReadOnlyList<Bucket> BucketsFor(int appId) =>
+        config.Assignments.TryGetValue(appId, out var bucketIds)
+            ? config.Buckets.Where(b => bucketIds.Contains(b.Id)).ToList()
+            : [];
 
     public DateTimeOffset PeriodStart(Bucket bucket, DateTimeOffset now) =>
         Periods.CurrentStart(bucket.Period, now, config.DayStartHour, config.WeekStart);
@@ -17,7 +18,7 @@ public sealed class BudgetService(CooldownConfig config, ISessionStore store)
     {
         var start = PeriodStart(bucket, now);
         var appIds = config.Assignments
-            .Where(kv => kv.Value == bucket.Id)
+            .Where(kv => kv.Value.Contains(bucket.Id))
             .Select(kv => kv.Key)
             .ToHashSet();
 

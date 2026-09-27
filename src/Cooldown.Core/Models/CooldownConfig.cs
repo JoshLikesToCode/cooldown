@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Cooldown.Core.Models;
 
 /// <summary>User settings. Stored as config.json in the app data folder.</summary>
@@ -5,8 +7,9 @@ public sealed class CooldownConfig
 {
     public List<Bucket> Buckets { get; set; } = [];
 
-    /// <summary>Steam App ID to bucket ID. Games not listed here are never limited.</summary>
-    public Dictionary<int, string> Assignments { get; set; } = [];
+    /// <summary>Steam App ID to the bucket IDs it counts toward. Games not listed here are never limited.</summary>
+    [JsonConverter(typeof(AssignmentsJsonConverter))]
+    public Dictionary<int, List<string>> Assignments { get; set; } = [];
 
     /// <summary>Hour a "day" starts. 4 means late-night sessions count toward the previous day.</summary>
     public int DayStartHour { get; set; } = 4;
@@ -23,6 +26,13 @@ public sealed class CooldownConfig
     public int LaunchGraceSeconds { get; set; } = 15;
 
     public int PollSeconds { get; set; } = 5;
+
+    /// <summary>Which per-game playtime totals the Assignments tab shows. All default on.</summary>
+    public bool ShowDailyPlaytime { get; set; } = true;
+
+    public bool ShowWeeklyPlaytime { get; set; } = true;
+
+    public bool ShowAllTimePlaytime { get; set; } = true;
 
     public static CooldownConfig CreateDefault() => new()
     {

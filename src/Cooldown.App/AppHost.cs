@@ -20,6 +20,8 @@ public sealed class AppHost : IDisposable
     public BudgetService Budgets { get; }
     public Tracker Tracker { get; }
     public IClock Clock { get; }
+    public IGameCatalog Catalog { get; }
+    public ISessionStore Sessions => _store;
     public string DataDir { get; }
     public string ConfigPath => Path.Combine(DataDir, "config.json");
 
@@ -48,6 +50,7 @@ public sealed class AppHost : IDisposable
             var fake = options.Scenario is { } path ? FakeSteam.FromFile(path, Clock) : FakeSteam.Default(Clock);
             detector = fake;
             terminator = fake;
+            Catalog = fake;
             Status = $"Fake mode at {options.Speed}x speed";
         }
         else if (OperatingSystem.IsWindows() && SteamRegistry.FindSteamRoot() is { } steamRoot)
@@ -58,14 +61,17 @@ public sealed class AppHost : IDisposable
             WriteGameList(library);
             detector = new RegistryGameDetector(library);
             terminator = new WindowsGameTerminator(library);
+            Catalog = new SteamGameCatalog(library);
             Status = $"Watching Steam at {steamRoot}";
         }
         else
         {
             Clock = new SystemClock();
             Config = ConfigStore.LoadOrCreate(ConfigPath, CooldownConfig.CreateDefault);
-            detector = new NothingRunning();
-            terminator = new NothingRunning();
+            var nothing = new NothingRunning();
+            detector = nothing;
+            terminator = nothing;
+            Catalog = nothing;
             Status = "Steam not found. Is it installed for this user?";
             Log.Error(Status);
         }
@@ -98,17 +104,18 @@ public sealed class AppHost : IDisposable
     private static CooldownConfig FakeDefaults()
     {
         var config = CooldownConfig.CreateDefault();
-        config.Assignments[730] = "competitive";   // Counter-Strike 2
-        config.Assignments[1145360] = "story";     // Hades
+        config.Assignments[730] = ["competitive"];   // Counter-Strike 2
+        config.Assignments[1145360] = ["story"];     // Hades
         config.PollSeconds = 1;
         config.GraceSeconds = 10;
         config.LaunchGraceSeconds = 5;
         return config;
     }
 
-    private sealed class NothingRunning : IGameDetector, IGameTerminator
+    private sealed class NothingRunning : IGameDetector, IGameTerminator, IGameCatalog
     {
         public DetectedGame? GetRunningGame() => null;
         public Task<bool> TerminateAsync(int appId, TimeSpan t, CancellationToken ct) => Task.FromResult(false);
+        public IReadOnlyCollection<DetectedGame> GetInstalledGames() => [];
     }
 }

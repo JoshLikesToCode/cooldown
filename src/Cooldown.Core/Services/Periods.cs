@@ -15,9 +15,20 @@ public static class Periods
         if (period == ResetPeriod.Daily)
             return dayStart;
 
-        int daysSinceWeekStart = ((int)dayStart.DayOfWeek - (int)weekStart + 7) % 7;
-        return dayStart.AddDays(-daysSinceWeekStart);
+        if (period == ResetPeriod.Weekly)
+        {
+            int daysSinceWeekStart = ((int)dayStart.DayOfWeek - (int)weekStart + 7) % 7;
+            return dayStart.AddDays(-daysSinceWeekStart);
+        }
+
+        var monthStart = new DateTimeOffset(now.Year, now.Month, 1, dayStartHour, 0, 0, now.Offset);
+        return now < monthStart ? monthStart.AddMonths(-1) : monthStart;
     }
 
-    public static string Noun(ResetPeriod period) => period == ResetPeriod.Daily ? "today" : "this week";
+    public static string Noun(ResetPeriod period) => period switch
+    {
+        ResetPeriod.Daily => "today",
+        ResetPeriod.Weekly => "this week",
+        _ => "this month",
+    };
 }

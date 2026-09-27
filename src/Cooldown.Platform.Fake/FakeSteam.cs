@@ -12,7 +12,7 @@ public sealed record FakeStep(int AppId, string? Name, int Minutes);
 /// Plays back a scripted list of "games" so the whole app can run on a machine without Steam.
 /// Terminating the current game skips to the next step, like a real close would.
 /// </summary>
-public sealed class FakeSteam(IReadOnlyList<FakeStep> steps, IClock clock) : IGameDetector, IGameTerminator
+public sealed class FakeSteam(IReadOnlyList<FakeStep> steps, IClock clock) : IGameDetector, IGameTerminator, IGameCatalog
 {
     private readonly Lock _gate = new();
     private int _index;
@@ -63,6 +63,13 @@ public sealed class FakeSteam(IReadOnlyList<FakeStep> steps, IClock clock) : IGa
             return Task.FromResult(true);
         }
     }
+
+    /// <summary>Distinct games that appear anywhere in the script, standing in for an "installed" list.</summary>
+    public IReadOnlyCollection<DetectedGame> GetInstalledGames() =>
+        steps.Where(s => s.AppId != 0)
+            .GroupBy(s => s.AppId)
+            .Select(g => new DetectedGame(g.Key, g.First().Name))
+            .ToList();
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 }

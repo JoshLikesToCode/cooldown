@@ -19,11 +19,16 @@ public class TrackerTests
         public readonly BudgetService Budgets;
 
         public Rig(Enforcement enforcement, TimeSpan budget)
+            : this([new("comp", "Competitive", budget, ResetPeriod.Daily, enforcement)], new() { [730] = ["comp"] })
+        {
+        }
+
+        public Rig(List<Bucket> buckets, Dictionary<int, List<string>> assignments)
         {
             var config = new CooldownConfig
             {
-                Buckets = [new("comp", "Competitive", budget, ResetPeriod.Daily, enforcement)],
-                Assignments = { [730] = "comp" },
+                Buckets = buckets,
+                Assignments = assignments,
                 PollSeconds = 5,
                 GraceSeconds = 60,
                 LaunchGraceSeconds = 15,
@@ -66,7 +71,7 @@ public class TrackerTests
         await rig.Play(TimeSpan.FromMinutes(5));
 
         Assert.Equal(2, rig.Store.All.Count);
-        Assert.Equal(TimeSpan.FromMinutes(15), rig.Budgets.Used(rig.Budgets.BucketFor(730)!, rig.Clock.Now));
+        Assert.Equal(TimeSpan.FromMinutes(15), rig.Budgets.Used(rig.Budgets.BucketsFor(730).Single(), rig.Clock.Now));
     }
 
     [Fact]
@@ -143,5 +148,34 @@ public class TrackerTests
         Assert.Single(rig.Store.All);
         Assert.Empty(rig.Notifier.Sent);
         Assert.Empty(rig.Terminator.Terminated);
+    }
+
+    [Fact]
+    public async Task A_game_in_multiple_buckets_closes_when_either_block_bucket_empties()
+    {
+        var roomy = new Bucket("roomy", "Roomy", TimeSpan.FromHours(5), ResetPeriod.Weekly, Enforcement.Block);
+        var tight = new Bucket("tight", "Tight", TimeSpan.FromMinutes(5), ResetPeriod.Daily, Enforcement.Block);
+        var rig = new Rig([roomy, tight], new() { [730] = ["roomy", "tight"] });
+        rig.Detector.Running = Cs2;
+
+        await rig.Play(TimeSpan.FromMinutes(5));
+        await rig.Play(TimeSpan.FromSeconds(65));
+
+        // The tight bucket (5 minutes) closed the game even though roomy (5 hours) still has plenty left.
+        Assert.Equal(new[] { 730 }, rig.Terminator.Terminated);
+    }
+
+    [Fact]
+    public async Task Goal_buckets_are_never_enforced_but_still_track_progress()
+    {
+        var goal = new Bucket("learning", "Learning", TimeSpan.FromHours(2), ResetPeriod.Monthly, Enforcement.Block, IsGoal: true);
+        var rig = new Rig([goal], new() { [730] = ["learning"] });
+        rig.Detector.Running = Cs2;
+
+        await rig.Play(TimeSpan.FromMinutes(10));
+
+        Assert.Empty(rig.Notifier.Sent);
+        Assert.Empty(rig.Terminator.Terminated);
+        Assert.Equal(TimeSpan.FromMinutes(10), rig.Budgets.Used(goal, rig.Clock.Now));
     }
 }

@@ -14,6 +14,12 @@ public interface IGameTerminator
     Task<bool> TerminateAsync(int appId, TimeSpan gracefulTimeout, CancellationToken ct);
 }
 
+/// <summary>Lists games available to assign to a bucket. Backed by real Steam or the fake platform.</summary>
+public interface IGameCatalog
+{
+    IReadOnlyCollection<DetectedGame> GetInstalledGames();
+}
+
 public interface INotifier
 {
     void Notify(string title, string message, NotificationLevel level);
