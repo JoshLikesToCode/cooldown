@@ -6,43 +6,22 @@ Put your competitive shooters in one group with an hour a day. Put long story ga
 
 It's built for adults managing their own habits, not for parental control. It's easy to quit on purpose. The point is to make you decide, instead of drifting past your limit.
 
-> Status: early. Windows detection and enforcement work. Linux detection is planned.
+> Status: early. Windows detection and enforcement work, with an in-app Settings screen for everything below. Linux detection, and a packaged installer, are next. See the roadmap.
 
 ## How it works
 
 Every few seconds Cooldown asks Steam which game is running. Steam keeps this in the registry on Windows, so no hooking or injection is involved. That matters for anti-cheat: Cooldown never touches game memory.
 
-Playtime is stored locally in SQLite. Each group has a budget and a reset period (daily or weekly). When a group gets low you get warnings at 10, 5 and 1 minute. When it's empty:
+Playtime is stored locally in SQLite. Games are organized into buckets, each with a budget, a reset period (daily, weekly or monthly), and how it's enforced. A game can belong to more than one bucket at once. When a bucket gets low you get warnings at 10, 5 and 1 minute (also configurable). When it's empty:
 
-- **Remind** groups show a notice and let you keep playing.
-- **Block** groups give you a grace period to save, ask the game to close, then force it closed if needed. Launching a game from an empty group gets a shorter grace period.
+- **Remind** buckets show a notice and let you keep playing.
+- **Block** buckets give you a grace period to save, ask the game to close, then force it closed if needed. Launching a game from an empty bucket gets a shorter grace period.
+
+There's also a **Goal** mode for the opposite case - games you're trying to play *more* of. Instead of counting a limit down, a goal bucket counts time *up* toward a target (say, two hours of a learning game this month) and is never enforced; it's just a progress bar.
 
 Warnings appear in a small always-on-top window, not as system notifications. Windows silences notifications while you're gaming, which is exactly when these matter. The window never takes focus from the game. It won't show over exclusive fullscreen games, so borderless windowed mode works best.
 
-## Setting it up
-
-On first run Cooldown creates `config.json` in `%APPDATA%\Cooldown`. It also writes `installed-games.txt` there, listing every installed game with its Steam App ID.
-
-```json
-{
-  "buckets": [
-    { "id": "competitive", "name": "Competitive", "budget": "01:00:00", "period": "Daily", "enforcement": "Block" },
-    { "id": "story", "name": "Story games", "budget": "10:00:00", "period": "Weekly", "enforcement": "Remind" }
-  ],
-  "assignments": {
-    "730": "competitive",
-    "1145360": "story"
-  },
-  "dayStartHour": 4,
-  "weekStart": "Monday",
-  "warningMinutes": [10, 5, 1],
-  "graceSeconds": 60,
-  "launchGraceSeconds": 15,
-  "pollSeconds": 5
-}
-```
-
-Games not listed under `assignments` are tracked but never limited. `dayStartHour` sets when a day resets, so a 1 AM session counts toward the evening before. Restart Cooldown after editing. (A settings screen is on the roadmap.)
+Everything - buckets, which games are assigned to them, colors and icons, goals, and global timing settings - is configured from the **Settings** button in the main window. There's nothing to hand-edit to get started.
 
 ## Developing
 
@@ -86,10 +65,11 @@ Every project targets plain `net10.0`, so the whole solution builds on Linux. Wi
 
 ## Roadmap
 
-- Settings screen for groups and game assignments
-- Suggested groups from Steam store genres
+- Packaged installer, so running Cooldown doesn't require the .NET SDK, a terminal, or this repo
+- Documented single-command setup for a non-technical user - install, open, done, no config file involved at any point
 - Linux detection using the `SteamAppId` value Steam sets on game processes (covers native and Proton games)
-- Weekly history view
+- Suggested buckets from Steam store genres
+- Richer playtime history (charts over time, not just the running totals on the Assignments tab)
 - Optional friction to override a block, like typing a phrase
 - Steam Deck support through a Decky Loader plugin
 
