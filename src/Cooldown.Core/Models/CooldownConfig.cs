@@ -27,7 +27,7 @@ public sealed class CooldownConfig
 
     public int PollSeconds { get; set; } = 5;
 
-    /// <summary>Which per-game playtime totals the Assignments tab shows. All default on.</summary>
+    /// <summary>Which per-game playtime totals the Game Library tab shows. All default on.</summary>
     public bool ShowDailyPlaytime { get; set; } = true;
 
     public bool ShowWeeklyPlaytime { get; set; } = true;

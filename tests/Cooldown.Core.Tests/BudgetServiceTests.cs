@@ -73,4 +73,44 @@ public class BudgetServiceTests
         Assert.Equal(TimeSpan.FromHours(1), budgets.Used(strategy, Noon));
         Assert.Equal([learning, strategy], budgets.BucketsFor(400));
     }
+
+    [Fact]
+    public void CountdownPlaytime_and_GoalPlaytime_split_by_bucket_kind()
+    {
+        var goal = new Bucket("learning", "Learning", TimeSpan.FromHours(2), ResetPeriod.Monthly, Enforcement.Remind, IsGoal: true);
+        var countdown = new Bucket("comp", "Competitive", TimeSpan.FromHours(1), ResetPeriod.Daily, Enforcement.Block);
+        var config = new CooldownConfig
+        {
+            Buckets = [goal, countdown],
+            // 400 is a pure goal game, 730 a pure countdown game, 999 unassigned (counts toward neither).
+            Assignments = { [400] = ["learning"], [730] = ["comp"] },
+        };
+        var store = new InMemorySessionStore();
+        var budgets = new BudgetService(config, store);
+
+        store.Extend(store.Begin(400, Noon.AddHours(-1)).Id, Noon); // 1h goal game
+        store.Extend(store.Begin(730, Noon.AddMinutes(-30)).Id, Noon); // 30m countdown game
+        store.Extend(store.Begin(999, Noon.AddMinutes(-20)).Id, Noon); // 20m unassigned game
+
+        Assert.Equal(TimeSpan.FromMinutes(30), budgets.CountdownPlaytime(Noon.AddHours(-2), Noon));
+        Assert.Equal(TimeSpan.FromHours(1), budgets.GoalPlaytime(Noon.AddHours(-2), Noon));
+    }
+
+    [Fact]
+    public void A_game_in_both_kinds_of_bucket_counts_toward_both_totals()
+    {
+        var goal = new Bucket("learning", "Learning", TimeSpan.FromHours(2), ResetPeriod.Monthly, Enforcement.Remind, IsGoal: true);
+        var countdown = new Bucket("comp", "Competitive", TimeSpan.FromHours(1), ResetPeriod.Daily, Enforcement.Block);
+        var config = new CooldownConfig
+        {
+            Buckets = [goal, countdown],
+            Assignments = { [400] = ["learning", "comp"] },
+        };
+        var store = new InMemorySessionStore();
+        var budgets = new BudgetService(config, store);
+        store.Extend(store.Begin(400, Noon.AddHours(-1)).Id, Noon);
+
+        Assert.Equal(TimeSpan.FromHours(1), budgets.CountdownPlaytime(Noon.AddHours(-2), Noon));
+        Assert.Equal(TimeSpan.FromHours(1), budgets.GoalPlaytime(Noon.AddHours(-2), Noon));
+    }
 }

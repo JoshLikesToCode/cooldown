@@ -27,8 +27,14 @@ public sealed class SettingsWindow : Window
     private readonly Button _redoButton = new() { Content = "Redo" };
 
     private readonly StackPanel _bucketList = new() { Spacing = 8 };
-    private readonly StackPanel _assignmentList = new() { Spacing = 6 };
+    private readonly StackPanel _gameLibraryList = new() { Spacing = 6 };
     private readonly TextBox _search = new() { Watermark = "Search games..." };
+    private readonly ComboBox _sortBy = new()
+    {
+        ItemsSource = new[] { "Name", "Bucket", "Daily time", "Weekly time", "Total time" },
+        SelectedIndex = 0,
+        MinWidth = 130,
+    };
 
     private readonly NumericUpDown _dayStartHour = new() { Minimum = 0, Maximum = 23 };
     private readonly ComboBox _weekStart = new() { ItemsSource = Enum.GetValues<DayOfWeek>(), HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -78,7 +84,7 @@ public sealed class SettingsWindow : Window
             Items =
             {
                 new TabItem { Header = "Buckets", Content = BuildBucketsTab() },
-                new TabItem { Header = "Assignments", Content = BuildAssignmentsTab() },
+                new TabItem { Header = "Game Library", Content = BuildGameLibraryTab() },
                 new TabItem { Header = "Global", Content = BuildGlobalTab() },
             },
         };
@@ -90,7 +96,7 @@ public sealed class SettingsWindow : Window
 
         LoadGlobalFields();
         RefreshBucketList();
-        RefreshAssignmentList();
+        RefreshGameLibraryList();
         RefreshUndoRedoButtons();
     }
 
@@ -207,59 +213,91 @@ public sealed class SettingsWindow : Window
         };
     }
 
-    // ---- Assignments tab ----
+    // ---- Game Library tab ----
 
-    private Control BuildAssignmentsTab()
+    private Control BuildGameLibraryTab()
     {
-        _search.TextChanged += (_, _) => RefreshAssignmentList();
+        _search.TextChanged += (_, _) => RefreshGameLibraryList();
+        _sortBy.SelectionChanged += (_, _) => RefreshGameLibraryList();
+
+        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 4) };
+        toolbar.Children.Add(_search);
+        Grid.SetColumn(_sortBy, 1);
+        toolbar.Children.Add(_sortBy);
+
         return new StackPanel
         {
             Spacing = 10,
-            Children = { _search, new ScrollViewer { Content = _assignmentList, MaxHeight = 470 } },
+            Children =
+            {
+                toolbar,
+                // Right padding keeps the scrollbar from overlapping the playtime column when it appears.
+                new ScrollViewer { Content = _gameLibraryList, MaxHeight = 460, Padding = new Thickness(0, 0, 14, 0) },
+            },
         };
     }
 
-    private void RefreshAssignmentList()
+    private sealed record GameRow(int AppId, string Name, bool Installed, TimeSpan Daily, TimeSpan Weekly, TimeSpan Total, string BucketSortKey);
+
+    private void RefreshGameLibraryList()
     {
-        _assignmentList.Children.Clear();
+        _gameLibraryList.Children.Clear();
 
         var installed = _host.Catalog.GetInstalledGames().ToDictionary(g => g.AppId, g => g.DisplayName);
         var assignedIds = _host.Config.Assignments.Keys;
         var allIds = installed.Keys.Union(assignedIds).ToList();
 
-        // Playtime totals for whichever periods are turned on in the Global tab, so this
-        // tab doubles as a simple stats view instead of needing a separate page.
+        // Always computed (even if a total isn't displayed) so sorting by any period still works.
         var now = _host.Clock.Now;
-        var daily = _host.Config.ShowDailyPlaytime
-            ? TotalsSince(Periods.CurrentStart(ResetPeriod.Daily, now, _host.Config.DayStartHour, _host.Config.WeekStart), now)
-            : null;
-        var weekly = _host.Config.ShowWeeklyPlaytime
-            ? TotalsSince(Periods.CurrentStart(ResetPeriod.Weekly, now, _host.Config.DayStartHour, _host.Config.WeekStart), now)
-            : null;
-        var allTime = _host.Config.ShowAllTimePlaytime ? TotalsSince(DateTimeOffset.UnixEpoch, now) : null;
+        var daily = TotalsSince(Periods.CurrentStart(ResetPeriod.Daily, now, _host.Config.DayStartHour, _host.Config.WeekStart), now);
+        var weekly = TotalsSince(Periods.CurrentStart(ResetPeriod.Weekly, now, _host.Config.DayStartHour, _host.Config.WeekStart), now);
+        var allTime = TotalsSince(DateTimeOffset.UnixEpoch, now);
 
         var filter = _search.Text?.Trim() ?? "";
         var rows = allIds
-            .Select(id => (AppId: id, Name: installed.GetValueOrDefault(id, $"App {id}"), Installed: installed.ContainsKey(id)))
+            .Select(id =>
+            {
+                var bucketNames = _host.Config.Assignments.GetValueOrDefault(id)?
+                    .Select(bid => _host.Config.Buckets.FirstOrDefault(b => b.Id == bid)?.Name)
+                    .Where(n => n is not null)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .ToList() ?? [];
+                return new GameRow(
+                    id,
+                    installed.GetValueOrDefault(id, $"App {id}"),
+                    installed.ContainsKey(id),
+                    daily.GetValueOrDefault(id),
+                    weekly.GetValueOrDefault(id),
+                    allTime.GetValueOrDefault(id),
+                    bucketNames.Count > 0 ? string.Join(", ", bucketNames) : "￿"); // unassigned sorts last
+            })
             .Where(g => filter.Length == 0 || g.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        foreach (var game in rows)
+        IEnumerable<GameRow> sorted = _sortBy.SelectedIndex switch
+        {
+            1 => rows.OrderBy(r => r.BucketSortKey, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            2 => rows.OrderByDescending(r => r.Daily).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            3 => rows.OrderByDescending(r => r.Weekly).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            4 => rows.OrderByDescending(r => r.Total).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            _ => rows.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+        };
+
+        foreach (var game in sorted)
         {
             var stats = new List<string>();
-            if (daily is not null && daily.GetValueOrDefault(game.AppId) is { } d && d > TimeSpan.Zero)
-                stats.Add($"{Format.Duration(d)} today");
-            if (weekly is not null && weekly.GetValueOrDefault(game.AppId) is { } w && w > TimeSpan.Zero)
-                stats.Add($"{Format.Duration(w)} this week");
-            if (allTime is not null && allTime.GetValueOrDefault(game.AppId) is { } a && a > TimeSpan.Zero)
-                stats.Add($"{Format.Duration(a)} total");
+            if (_host.Config.ShowDailyPlaytime && game.Daily > TimeSpan.Zero)
+                stats.Add($"{Format.Duration(game.Daily)} today");
+            if (_host.Config.ShowWeeklyPlaytime && game.Weekly > TimeSpan.Zero)
+                stats.Add($"{Format.Duration(game.Weekly)} this week");
+            if (_host.Config.ShowAllTimePlaytime && game.Total > TimeSpan.Zero)
+                stats.Add($"{Format.Duration(game.Total)} total");
 
-            _assignmentList.Children.Add(AssignmentRow(game.AppId, game.Name, game.Installed, string.Join(" · ", stats)));
+            _gameLibraryList.Children.Add(GameLibraryRow(game.AppId, game.Name, game.Installed, stats));
         }
 
         if (rows.Count == 0)
-            _assignmentList.Children.Add(new TextBlock { Text = "No games found.", Foreground = Palette.Muted, Margin = new Thickness(4) });
+            _gameLibraryList.Children.Add(new TextBlock { Text = "No games found.", Foreground = Palette.Muted, Margin = new Thickness(4) });
     }
 
     /// <summary>Per-app playtime since <paramref name="since"/>, clipping sessions that straddle the boundary.</summary>
@@ -273,7 +311,7 @@ public sealed class SettingsWindow : Window
                 return to > from ? acc + (to - from) : acc;
             }));
 
-    private Control AssignmentRow(int appId, string name, bool installed, string statsText)
+    private Control GameLibraryRow(int appId, string name, bool installed, IReadOnlyList<string> statLines)
     {
         var icon = new Image { Width = 32, Height = 18, Stretch = Stretch.UniformToFill };
         var iconBox = new Border
@@ -295,20 +333,29 @@ public sealed class SettingsWindow : Window
             Margin = new Thickness(8, 0),
         };
 
-        var totalLabel = new TextBlock
+        var statsPanel = new StackPanel
         {
-            Text = statsText,
-            Foreground = Palette.Muted,
-            FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
         };
+        foreach (var line in statLines)
+        {
+            statsPanel.Children.Add(new TextBlock
+            {
+                Text = line,
+                Foreground = Palette.Muted,
+                FontSize = 11,
+                TextAlignment = TextAlignment.Right,
+            });
+        }
 
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         top.Children.Add(iconBox);
         Grid.SetColumn(label, 1);
         top.Children.Add(label);
-        Grid.SetColumn(totalLabel, 2);
-        top.Children.Add(totalLabel);
+        Grid.SetColumn(statsPanel, 2);
+        top.Children.Add(statsPanel);
 
         var chips = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         var assigned = _host.Config.Assignments.GetValueOrDefault(appId) ?? [];
@@ -396,7 +443,7 @@ public sealed class SettingsWindow : Window
                 Field("Warning minutes (comma separated)", _warningMinutes),
                 Field("Grace seconds before closing a game", _graceSeconds),
                 Field("Grace seconds if launched already-empty", _launchGraceSeconds),
-                Field("Playtime totals shown on the Assignments tab", new StackPanel { Spacing = 4, Children = { _showDaily, _showWeekly, _showAllTime } }),
+                Field("Playtime totals shown on the Game Library tab", new StackPanel { Spacing = 4, Children = { _showDaily, _showWeekly, _showAllTime } }),
                 save,
             },
         };
@@ -486,7 +533,7 @@ public sealed class SettingsWindow : Window
     private void RefreshAll()
     {
         RefreshBucketList();
-        RefreshAssignmentList();
+        RefreshGameLibraryList();
         LoadGlobalFields();
         RefreshUndoRedoButtons();
     }

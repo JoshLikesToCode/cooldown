@@ -13,6 +13,7 @@ public sealed class MainWindow : Window
 {
     private readonly AppHost _host;
     private readonly TextBlock _nowPlaying = new() { FontSize = 15, Foreground = Palette.Text };
+    private readonly TextBlock _summary = new() { FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap, IsVisible = false };
     private readonly StackPanel _buckets = new() { Spacing = 12 };
 
     public bool AllowClose { get; set; }
@@ -37,6 +38,7 @@ public sealed class MainWindow : Window
             Children =
             {
                 _nowPlaying,
+                _summary,
                 _buckets,
                 settingsButton,
                 new TextBlock
@@ -65,9 +67,39 @@ public sealed class MainWindow : Window
         else
             _nowPlaying.Text = $"Playing {game.DisplayName} in {string.Join(", ", buckets.Select(b => b.Name))}";
 
+        RefreshSummary(now);
+
         _buckets.Children.Clear();
         foreach (var status in _host.Budgets.Snapshot(now))
             _buckets.Children.Add(BucketRow(status));
+    }
+
+    /// <summary>Daily/weekly playtime split by countdown vs. goal buckets, separate from any one bucket's own numbers.</summary>
+    private void RefreshSummary(DateTimeOffset now)
+    {
+        var config = _host.Config;
+        bool hasCountdown = config.Buckets.Any(b => !b.IsGoal);
+        bool hasGoal = config.Buckets.Any(b => b.IsGoal);
+
+        var dayStart = Periods.CurrentStart(ResetPeriod.Daily, now, config.DayStartHour, config.WeekStart);
+        var weekStart = Periods.CurrentStart(ResetPeriod.Weekly, now, config.DayStartHour, config.WeekStart);
+
+        var lines = new List<string>();
+        if (hasCountdown)
+        {
+            var day = _host.Budgets.CountdownPlaytime(dayStart, now);
+            var week = _host.Budgets.CountdownPlaytime(weekStart, now);
+            lines.Add($"Countdown games: {Format.Duration(day)} today, {Format.Duration(week)} this week");
+        }
+        if (hasGoal)
+        {
+            var day = _host.Budgets.GoalPlaytime(dayStart, now);
+            var week = _host.Budgets.GoalPlaytime(weekStart, now);
+            lines.Add($"Goal games: {Format.Duration(day)} today, {Format.Duration(week)} this week");
+        }
+
+        _summary.Text = string.Join("\n", lines);
+        _summary.IsVisible = lines.Count > 0;
     }
 
     private static Control BucketRow(BucketStatus s)

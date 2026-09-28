@@ -46,4 +46,31 @@ public sealed class BudgetService(CooldownConfig config, ISessionStore store)
 
     public IReadOnlyList<BucketStatus> Snapshot(DateTimeOffset now) =>
         config.Buckets.Select(b => Status(b, now)).ToList();
+
+    /// <summary>
+    /// Total time since <paramref name="since"/> spent on games that count toward at least one
+    /// countdown (non-goal) bucket. A game in both a countdown and a goal bucket counts in both totals.
+    /// </summary>
+    public TimeSpan CountdownPlaytime(DateTimeOffset since, DateTimeOffset now) =>
+        PlaytimeWhere(since, now, buckets => buckets.Any(b => !b.IsGoal));
+
+    /// <summary>Total time since <paramref name="since"/> spent on games that count toward at least one goal bucket.</summary>
+    public TimeSpan GoalPlaytime(DateTimeOffset since, DateTimeOffset now) =>
+        PlaytimeWhere(since, now, buckets => buckets.Any(b => b.IsGoal));
+
+    private TimeSpan PlaytimeWhere(DateTimeOffset since, DateTimeOffset now, Func<IReadOnlyList<Bucket>, bool> matches)
+    {
+        var total = TimeSpan.Zero;
+        foreach (var s in store.GetSessionsSince(since))
+        {
+            if (!matches(BucketsFor(s.AppId)))
+                continue;
+
+            var from = s.Start < since ? since : s.Start;
+            var to = s.End > now ? now : s.End;
+            if (to > from)
+                total += to - from;
+        }
+        return total;
+    }
 }

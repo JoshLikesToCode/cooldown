@@ -12,7 +12,10 @@ internal static class BucketEditDialog
     private static readonly string[] Swatches = ["#7FD1F5", "#F2B84B", "#E5484D", "#8A6FE8", "#4BC97A", "#E56FA0"];
     private const string NoIcon = "None";
     private static readonly string[] IconChoices =
-        [NoIcon, "🎮", "🎯", "⚔️", "🏆", "🎲", "🕹️", "🔫", "🧙", "🏎️", "⏱️", "🛡️", "🌟", "🔥", "❄️", "⛏️", "💀"];
+        [
+            NoIcon, "🎮", "🎯", "⚔️", "🏆", "🎲", "🕹️", "🔫", "🧙", "🏎️", "⏱️", "🛡️", "🌟", "🔥", "❄️", "⛏️", "💀",
+            "📖", "⏰", "🍜", "🍣", "⌨️", "💻", "🧑‍💻", "🧳", "🎒", "📚", "🖥️",
+        ];
 
     public static async Task<Bucket?> ShowAsync(Window owner, Bucket? existing, IReadOnlyCollection<string> takenIds)
     {
