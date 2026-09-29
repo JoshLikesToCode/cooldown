@@ -73,4 +73,18 @@ public sealed class BudgetService(CooldownConfig config, ISessionStore store)
         }
         return total;
     }
+
+    /// <summary>
+    /// Whether every countdown bucket was still under budget as of <paramref name="asOf"/>.
+    /// True (vacuously) if there are no countdown buckets. Used to render the calendar's daily pass/fail.
+    /// </summary>
+    public bool WithinAllLimits(DateTimeOffset asOf) =>
+        config.Buckets.Where(b => !b.IsGoal).All(b => Used(b, asOf) <= b.Budget);
+
+    /// <summary>
+    /// Whether every goal bucket had reached its target as of <paramref name="asOf"/>.
+    /// True (vacuously) if there are no goal buckets.
+    /// </summary>
+    public bool MetAllGoals(DateTimeOffset asOf) =>
+        config.Buckets.Where(b => b.IsGoal).All(b => Used(b, asOf) >= b.Budget);
 }

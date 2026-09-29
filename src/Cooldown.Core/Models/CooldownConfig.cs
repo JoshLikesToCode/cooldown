@@ -34,6 +34,24 @@ public sealed class CooldownConfig
 
     public bool ShowAllTimePlaytime { get; set; } = true;
 
+    /// <summary>
+    /// Pauses playtime accounting when there's been no mouse/keyboard input for
+    /// <see cref="IdleThresholdMinutes"/>. Off by default. When off, Tracker never even
+    /// calls the idle detector - see IIdleDetector's doc comment for why that matters.
+    /// </summary>
+    public bool IdleDetectionEnabled { get; set; } = false;
+
+    public int IdleThresholdMinutes { get; set; } = 5;
+
+    /// <summary>Whether the pop-out calendar is available from the main window at all.</summary>
+    public bool CalendarEnabled { get; set; } = true;
+
+    /// <summary>Calendar day marked green only if every goal bucket had been met by day's end.</summary>
+    public bool CalendarShowGoals { get; set; } = true;
+
+    /// <summary>Calendar day marked green only if every countdown bucket stayed under budget through day's end.</summary>
+    public bool CalendarShowLimits { get; set; } = true;
+
     public static CooldownConfig CreateDefault() => new()
     {
         Buckets =

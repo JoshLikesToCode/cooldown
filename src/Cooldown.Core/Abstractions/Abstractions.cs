@@ -46,3 +46,19 @@ public interface ISessionStore
     /// <summary>All sessions that ended at or after <paramref name="since"/>.</summary>
     IReadOnlyList<PlaySession> GetSessionsSince(DateTimeOffset since);
 }
+
+/// <summary>
+/// Reports how long since the user last moved the mouse or pressed a key, system-wide.
+/// The real implementation reads Windows' own idle counter (the same one screensavers and
+/// "away" statuses use) - it never hooks input or touches another process, so it's inert
+/// to anti-cheat. Tracker only calls this at all when idle detection is turned on.
+/// </summary>
+public interface IIdleDetector
+{
+    TimeSpan IdleTime();
+}
+
+public sealed class NeverIdle : IIdleDetector
+{
+    public TimeSpan IdleTime() => TimeSpan.Zero;
+}

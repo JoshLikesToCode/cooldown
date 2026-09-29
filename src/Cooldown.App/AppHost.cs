@@ -37,6 +37,7 @@ public sealed class AppHost : IDisposable
 
         IGameDetector detector;
         IGameTerminator terminator;
+        IIdleDetector idleDetector = new NeverIdle();
 
         if (options.Fake)
         {
@@ -62,6 +63,7 @@ public sealed class AppHost : IDisposable
             detector = new RegistryGameDetector(library);
             terminator = new WindowsGameTerminator(library);
             Catalog = new SteamGameCatalog(library);
+            idleDetector = new Win32IdleDetector();
             Status = $"Watching Steam at {steamRoot}";
         }
         else
@@ -78,7 +80,7 @@ public sealed class AppHost : IDisposable
 
         _store = new SqliteSessionStore(Path.Combine(DataDir, "sessions.db"));
         Budgets = new BudgetService(Config, _store);
-        Tracker = new Tracker(Config, detector, terminator, notifier, _store, Budgets, Clock);
+        Tracker = new Tracker(Config, detector, terminator, notifier, _store, Budgets, Clock, idleDetector);
     }
 
     public void Start() => _loop = Task.Run(() => Tracker.RunAsync(_cts.Token));

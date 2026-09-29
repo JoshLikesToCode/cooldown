@@ -55,3 +55,9 @@ internal sealed class RecordingNotifier : INotifier
     public List<(string Title, string Message, NotificationLevel Level)> Sent { get; } = [];
     public void Notify(string title, string message, NotificationLevel level) => Sent.Add((title, message, level));
 }
+
+internal sealed class ManualIdleDetector : IIdleDetector
+{
+    public TimeSpan Idle { get; set; } = TimeSpan.Zero;
+    public TimeSpan IdleTime() => Idle;
+}

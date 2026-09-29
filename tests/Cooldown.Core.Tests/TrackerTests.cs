@@ -15,8 +15,10 @@ public class TrackerTests
         public readonly RecordingNotifier Notifier = new();
         public readonly InMemorySessionStore Store = new();
         public readonly RecordingTerminator Terminator;
+        public readonly ManualIdleDetector Idle = new();
         public readonly Tracker Tracker;
         public readonly BudgetService Budgets;
+        public readonly CooldownConfig Config;
 
         public Rig(Enforcement enforcement, TimeSpan budget)
             : this([new("comp", "Competitive", budget, ResetPeriod.Daily, enforcement)], new() { [730] = ["comp"] })
@@ -25,7 +27,7 @@ public class TrackerTests
 
         public Rig(List<Bucket> buckets, Dictionary<int, List<string>> assignments)
         {
-            var config = new CooldownConfig
+            Config = new CooldownConfig
             {
                 Buckets = buckets,
                 Assignments = assignments,
@@ -34,8 +36,8 @@ public class TrackerTests
                 LaunchGraceSeconds = 15,
             };
             Terminator = new RecordingTerminator(Detector);
-            Budgets = new BudgetService(config, Store);
-            Tracker = new Tracker(config, Detector, Terminator, Notifier, Store, Budgets, Clock);
+            Budgets = new BudgetService(Config, Store);
+            Tracker = new Tracker(Config, Detector, Terminator, Notifier, Store, Budgets, Clock, Idle);
         }
 
         /// <summary>Tick every 5 seconds for the given duration.</summary>
@@ -177,5 +179,53 @@ public class TrackerTests
         Assert.Empty(rig.Notifier.Sent);
         Assert.Empty(rig.Terminator.Terminated);
         Assert.Equal(TimeSpan.FromMinutes(10), rig.Budgets.Used(goal, rig.Clock.Now));
+    }
+
+    [Fact]
+    public async Task Idle_time_is_not_counted_once_the_threshold_is_crossed()
+    {
+        var rig = new Rig(Enforcement.Remind, TimeSpan.FromHours(5));
+        rig.Config.IdleDetectionEnabled = true;
+        rig.Config.IdleThresholdMinutes = 5;
+        rig.Detector.Running = Cs2;
+
+        await rig.Play(TimeSpan.FromMinutes(2)); // active
+        rig.Idle.Idle = TimeSpan.FromMinutes(6); // now idle past the threshold
+        await rig.Play(TimeSpan.FromMinutes(20)); // still "running", but away from keyboard
+
+        var bucket = rig.Budgets.BucketsFor(730).Single();
+        Assert.Equal(TimeSpan.FromMinutes(2), rig.Budgets.Used(bucket, rig.Clock.Now));
+    }
+
+    [Fact]
+    public async Task Idle_detection_does_nothing_when_turned_off_even_if_idle()
+    {
+        var rig = new Rig(Enforcement.Remind, TimeSpan.FromHours(5));
+        rig.Config.IdleDetectionEnabled = false;
+        rig.Idle.Idle = TimeSpan.FromHours(1); // would be idle, but the feature is off
+        rig.Detector.Running = Cs2;
+
+        await rig.Play(TimeSpan.FromMinutes(10));
+
+        var bucket = rig.Budgets.BucketsFor(730).Single();
+        Assert.Equal(TimeSpan.FromMinutes(10), rig.Budgets.Used(bucket, rig.Clock.Now));
+    }
+
+    [Fact]
+    public async Task Play_resumes_counting_once_no_longer_idle()
+    {
+        var rig = new Rig(Enforcement.Remind, TimeSpan.FromHours(5));
+        rig.Config.IdleDetectionEnabled = true;
+        rig.Config.IdleThresholdMinutes = 5;
+        rig.Detector.Running = Cs2;
+
+        await rig.Play(TimeSpan.FromMinutes(2));
+        rig.Idle.Idle = TimeSpan.FromMinutes(6);
+        await rig.Play(TimeSpan.FromMinutes(3));
+        rig.Idle.Idle = TimeSpan.Zero; // back at the keyboard
+        await rig.Play(TimeSpan.FromMinutes(4));
+
+        var bucket = rig.Budgets.BucketsFor(730).Single();
+        Assert.Equal(TimeSpan.FromMinutes(6), rig.Budgets.Used(bucket, rig.Clock.Now));
     }
 }

@@ -45,6 +45,11 @@ public sealed class SettingsWindow : Window
     private readonly CheckBox _showWeekly = new() { Content = "This week's total" };
     private readonly CheckBox _showAllTime = new() { Content = "All-time total" };
 
+    private readonly CheckBox _idleEnabled = new() { Content = "Pause tracking when idle" };
+    private readonly NumericUpDown _idleThresholdMinutes = new() { Minimum = 1, Maximum = 180 };
+
+    private readonly CheckBox _calendarEnabled = new() { Content = "Show the pop-out calendar on the main window" };
+
     private sealed record Snapshot(
         List<Bucket> Buckets,
         Dictionary<int, List<string>> Assignments,
@@ -55,7 +60,10 @@ public sealed class SettingsWindow : Window
         int LaunchGraceSeconds,
         bool ShowDailyPlaytime,
         bool ShowWeeklyPlaytime,
-        bool ShowAllTimePlaytime);
+        bool ShowAllTimePlaytime,
+        bool IdleDetectionEnabled,
+        int IdleThresholdMinutes,
+        bool CalendarEnabled);
 
     public SettingsWindow(AppHost host, Action onChanged)
     {
@@ -430,10 +438,15 @@ public sealed class SettingsWindow : Window
                 _host.Config.ShowDailyPlaytime = _showDaily.IsChecked ?? true;
                 _host.Config.ShowWeeklyPlaytime = _showWeekly.IsChecked ?? true;
                 _host.Config.ShowAllTimePlaytime = _showAllTime.IsChecked ?? true;
+                _host.Config.IdleDetectionEnabled = _idleEnabled.IsChecked ?? false;
+                _host.Config.IdleThresholdMinutes = (int)(_idleThresholdMinutes.Value ?? 5);
+                _host.Config.CalendarEnabled = _calendarEnabled.IsChecked ?? true;
             });
         };
 
-        return new StackPanel
+        _idleEnabled.IsCheckedChanged += (_, _) => _idleThresholdMinutes.IsEnabled = _idleEnabled.IsChecked ?? false;
+
+        var fields = new StackPanel
         {
             Spacing = 12,
             Children =
@@ -444,9 +457,22 @@ public sealed class SettingsWindow : Window
                 Field("Grace seconds before closing a game", _graceSeconds),
                 Field("Grace seconds if launched already-empty", _launchGraceSeconds),
                 Field("Playtime totals shown on the Game Library tab", new StackPanel { Spacing = 4, Children = { _showDaily, _showWeekly, _showAllTime } }),
+                Field("Idle detection", new StackPanel
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        _idleEnabled,
+                        Field("Pause after this many minutes of no mouse/keyboard input", _idleThresholdMinutes),
+                    },
+                }),
+                Field("Pop-out calendar", _calendarEnabled),
                 save,
             },
         };
+
+        // Right padding keeps the scrollbar from overlapping the last field, same as the Game Library tab.
+        return new ScrollViewer { Content = fields, Padding = new Thickness(0, 0, 14, 0) };
     }
 
     private void LoadGlobalFields()
@@ -459,6 +485,10 @@ public sealed class SettingsWindow : Window
         _showDaily.IsChecked = _host.Config.ShowDailyPlaytime;
         _showWeekly.IsChecked = _host.Config.ShowWeeklyPlaytime;
         _showAllTime.IsChecked = _host.Config.ShowAllTimePlaytime;
+        _idleEnabled.IsChecked = _host.Config.IdleDetectionEnabled;
+        _idleThresholdMinutes.Value = _host.Config.IdleThresholdMinutes;
+        _idleThresholdMinutes.IsEnabled = _host.Config.IdleDetectionEnabled;
+        _calendarEnabled.IsChecked = _host.Config.CalendarEnabled;
     }
 
     private static Control Field(string label, Control input) => new StackPanel
@@ -479,7 +509,10 @@ public sealed class SettingsWindow : Window
         _host.Config.LaunchGraceSeconds,
         _host.Config.ShowDailyPlaytime,
         _host.Config.ShowWeeklyPlaytime,
-        _host.Config.ShowAllTimePlaytime);
+        _host.Config.ShowAllTimePlaytime,
+        _host.Config.IdleDetectionEnabled,
+        _host.Config.IdleThresholdMinutes,
+        _host.Config.CalendarEnabled);
 
     private void Apply(Snapshot s)
     {
@@ -493,6 +526,9 @@ public sealed class SettingsWindow : Window
         _host.Config.ShowDailyPlaytime = s.ShowDailyPlaytime;
         _host.Config.ShowWeeklyPlaytime = s.ShowWeeklyPlaytime;
         _host.Config.ShowAllTimePlaytime = s.ShowAllTimePlaytime;
+        _host.Config.IdleDetectionEnabled = s.IdleDetectionEnabled;
+        _host.Config.IdleThresholdMinutes = s.IdleThresholdMinutes;
+        _host.Config.CalendarEnabled = s.CalendarEnabled;
     }
 
     private void Commit(Action mutate)

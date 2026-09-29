@@ -14,7 +14,8 @@ public sealed class Tracker(
     INotifier notifier,
     ISessionStore store,
     BudgetService budgets,
-    IClock clock)
+    IClock clock,
+    IIdleDetector idle)
 {
     private sealed record Current(long SessionId, int AppId, DateTimeOffset Start, DateTimeOffset LastSeen);
 
@@ -58,7 +59,11 @@ public sealed class Tracker(
             Log.Info(game is null ? "No game running" : $"Detected {game.DisplayName} ({game.AppId})");
 
         RunningGame = game;
-        RecordPlaytime(game, now);
+
+        // Short-circuits before touching the idle detector at all when the feature is off -
+        // see IIdleDetector's doc comment for why that matters.
+        bool idlePaused = config.IdleDetectionEnabled && idle.IdleTime() >= TimeSpan.FromMinutes(config.IdleThresholdMinutes);
+        RecordPlaytime(game, now, idlePaused);
 
         if (game is null)
         {
@@ -73,7 +78,7 @@ public sealed class Tracker(
         Ticked?.Invoke();
     }
 
-    private void RecordPlaytime(DetectedGame? game, DateTimeOffset now)
+    private void RecordPlaytime(DetectedGame? game, DateTimeOffset now, bool idlePaused)
     {
         // A gap longer than a few polls means the PC slept or we stalled. Don't count it.
         var maxGap = TimeSpan.FromSeconds(config.PollSeconds * 3 * clock.Speed);
@@ -82,16 +87,18 @@ public sealed class Tracker(
         {
             bool sameGame = game?.AppId == cur.AppId;
             bool continuous = now - cur.LastSeen <= maxGap;
-            if (sameGame && continuous)
+            if (sameGame && continuous && !idlePaused)
             {
                 store.Extend(cur.SessionId, now);
                 _current = cur with { LastSeen = now };
                 return;
             }
+            // Idle (or a real gap) ends the session here rather than extending it, so the
+            // idle/asleep stretch itself is never counted - not just skipped going forward.
             _current = null;
         }
 
-        if (game is not null)
+        if (game is not null && !idlePaused)
         {
             var session = store.Begin(game.AppId, now);
             _current = new Current(session.Id, game.AppId, now, now);
